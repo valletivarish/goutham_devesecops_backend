@@ -67,7 +67,7 @@ public class GoalController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<GoalDTO> getGoalById(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             Authentication authentication) {
         Long userId = getCurrentUserId(authentication);
         return ResponseEntity.ok(goalService.getGoalById(id, userId));
@@ -102,7 +102,7 @@ public class GoalController {
      */
     @PutMapping("/{id}")
     public ResponseEntity<GoalDTO> updateGoal(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @Valid @RequestBody GoalDTO dto,
             Authentication authentication) {
         Long userId = getCurrentUserId(authentication);
@@ -118,7 +118,7 @@ public class GoalController {
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteGoal(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             Authentication authentication) {
         Long userId = getCurrentUserId(authentication);
         goalService.deleteGoal(id, userId);

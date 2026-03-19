@@ -2,49 +2,29 @@ package com.personalfinance.tracker.exception;
 
 import com.personalfinance.tracker.dto.ApiErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Collectors;
 
-/**
- * Centralized exception handler for the entire REST API surface.
- *
- * <p>Intercepts exceptions thrown by controllers and services and converts them
- * into consistent {@link ApiErrorResponse} payloads. This ensures every error
- * response follows the same JSON structure regardless of the error type.</p>
- *
- * <p>Exception-to-status mapping:
- * <ul>
- *   <li>{@link MethodArgumentNotValidException} &rarr; 400 with field-level errors</li>
- *   <li>{@link ValidationException} &rarr; 400</li>
- *   <li>{@link AccessDeniedException} &rarr; 403</li>
- *   <li>{@link ResourceNotFoundException} &rarr; 404</li>
- *   <li>All other exceptions &rarr; 500</li>
- * </ul>
- * </p>
- */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    /**
-     * Handles bean-validation failures triggered by {@code @Valid} on request bodies.
-     * Extracts each field error and returns them as a structured list so the client
-     * can display inline validation messages.
-     *
-     * @param ex      the validation exception containing field errors
-     * @param request the current HTTP request (used to capture the request path)
-     * @return a 400 Bad Request response with per-field error details
-     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiErrorResponse> handleMethodArgumentNotValid(
             MethodArgumentNotValidException ex,
@@ -60,10 +40,14 @@ public class GlobalExceptionHandler {
                         .build())
                 .toList();
 
+        String summary = fieldErrors.stream()
+                .map(e -> e.getField() + ": " + e.getMessage())
+                .collect(Collectors.joining("; "));
+
         ApiErrorResponse response = ApiErrorResponse.builder()
                 .status(HttpStatus.BAD_REQUEST.value())
                 .error("Bad Request")
-                .message("Validation failed for one or more fields")
+                .message(summary)
                 .timestamp(LocalDateTime.now())
                 .path(request.getRequestURI())
                 .fieldErrors(fieldErrors)
@@ -72,14 +56,60 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
-    /**
-     * Handles domain-level resource-not-found scenarios such as looking up
-     * a transaction or category by an ID that does not exist.
-     *
-     * @param ex      the not-found exception
-     * @param request the current HTTP request
-     * @return a 404 Not Found response
-     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleConstraintViolation(
+            ConstraintViolationException ex,
+            HttpServletRequest request) {
+
+        String message = ex.getConstraintViolations().stream()
+                .map(v -> v.getPropertyPath() + ": " + v.getMessage())
+                .collect(Collectors.joining("; "));
+
+        ApiErrorResponse response = ApiErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Bad Request")
+                .message(message)
+                .timestamp(LocalDateTime.now())
+                .path(request.getRequestURI())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiErrorResponse> handleMessageNotReadable(
+            HttpMessageNotReadableException ex,
+            HttpServletRequest request) {
+
+        ApiErrorResponse response = ApiErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Bad Request")
+                .message("Invalid request body. Please check the data format and try again.")
+                .timestamp(LocalDateTime.now())
+                .path(request.getRequestURI())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiErrorResponse> handleTypeMismatch(
+            MethodArgumentTypeMismatchException ex,
+            HttpServletRequest request) {
+
+        String message = "Invalid value '" + ex.getValue() + "' for parameter '" + ex.getName() + "'";
+
+        ApiErrorResponse response = ApiErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Bad Request")
+                .message(message)
+                .timestamp(LocalDateTime.now())
+                .path(request.getRequestURI())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleResourceNotFound(
             ResourceNotFoundException ex,
@@ -96,14 +126,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
     }
 
-    /**
-     * Handles custom business-validation failures such as duplicate usernames
-     * or category names.
-     *
-     * @param ex      the validation exception
-     * @param request the current HTTP request
-     * @return a 400 Bad Request response
-     */
     @ExceptionHandler(ValidationException.class)
     public ResponseEntity<ApiErrorResponse> handleValidation(
             ValidationException ex,
@@ -120,14 +142,22 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
-    /**
-     * Handles Spring Security access-denied scenarios where an authenticated user
-     * attempts to access a resource they are not authorized for.
-     *
-     * @param ex      the access-denied exception
-     * @param request the current HTTP request
-     * @return a 403 Forbidden response
-     */
+    @ExceptionHandler({BadCredentialsException.class, UsernameNotFoundException.class})
+    public ResponseEntity<ApiErrorResponse> handleAuthenticationFailure(
+            Exception ex,
+            HttpServletRequest request) {
+
+        ApiErrorResponse response = ApiErrorResponse.builder()
+                .status(HttpStatus.UNAUTHORIZED.value())
+                .error("Unauthorized")
+                .message("Invalid username or password")
+                .timestamp(LocalDateTime.now())
+                .path(request.getRequestURI())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiErrorResponse> handleAccessDenied(
             AccessDeniedException ex,
@@ -144,15 +174,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
     }
 
-    /**
-     * Catch-all handler for any unhandled exceptions. Logs the full stack trace
-     * at ERROR level for debugging while returning a generic 500 response to
-     * avoid leaking internal details to the client.
-     *
-     * @param ex      the unexpected exception
-     * @param request the current HTTP request
-     * @return a 500 Internal Server Error response
-     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGenericException(
             Exception ex,
@@ -161,10 +182,14 @@ public class GlobalExceptionHandler {
         logger.error("Unhandled exception on {} {}: {}",
                 request.getMethod(), request.getRequestURI(), ex.getMessage(), ex);
 
+        String message = ex.getMessage() != null
+                ? "Server error: " + ex.getMessage()
+                : "An unexpected server error occurred. Check the backend logs for details.";
+
         ApiErrorResponse response = ApiErrorResponse.builder()
                 .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                 .error("Internal Server Error")
-                .message("An unexpected error occurred. Please try again later.")
+                .message(message)
                 .timestamp(LocalDateTime.now())
                 .path(request.getRequestURI())
                 .build();

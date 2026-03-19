@@ -11,7 +11,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.List;
+import java.time.Month;
+import java.time.format.TextStyle;
+import java.util.*;
 
 /**
  * Service layer for the dashboard summary endpoint.
@@ -88,6 +90,32 @@ public class DashboardService {
                 .map(this::mapTransactionToDTO)
                 .toList();
 
+        // Build monthly income vs expenses data for the chart
+        List<Object[]> monthlyIncome = transactionRepository
+                .findMonthlyTotalsByUserIdAndType(userId, TransactionType.INCOME);
+        List<Object[]> monthlyExpense = transactionRepository
+                .findMonthlyTotalsByUserIdAndType(userId, TransactionType.EXPENSE);
+
+        Map<String, BigDecimal[]> monthMap = new LinkedHashMap<>();
+        for (Object[] row : monthlyIncome) {
+            String key = formatMonthKey((Integer) row[0], (Integer) row[1]);
+            monthMap.computeIfAbsent(key, k -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
+            monthMap.get(key)[0] = (BigDecimal) row[2];
+        }
+        for (Object[] row : monthlyExpense) {
+            String key = formatMonthKey((Integer) row[0], (Integer) row[1]);
+            monthMap.computeIfAbsent(key, k -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
+            monthMap.get(key)[1] = (BigDecimal) row[2];
+        }
+
+        List<DashboardDTO.MonthlyDataDTO> monthlyData = monthMap.entrySet().stream()
+                .map(e -> DashboardDTO.MonthlyDataDTO.builder()
+                        .month(e.getKey())
+                        .income(e.getValue()[0])
+                        .expenses(e.getValue()[1])
+                        .build())
+                .toList();
+
         return DashboardDTO.builder()
                 .totalIncome(totalIncome)
                 .totalExpenses(totalExpenses)
@@ -95,6 +123,7 @@ public class DashboardService {
                 .totalBudgets((int) budgetCount)
                 .activeBudgets((int) budgetCount)
                 .totalGoals((int) goalCount)
+                .monthlyData(monthlyData)
                 .recentTransactions(recentTransactions)
                 .build();
     }
@@ -108,6 +137,11 @@ public class DashboardService {
      * @param transaction the entity to map
      * @return the corresponding DTO
      */
+    private String formatMonthKey(Integer year, Integer month) {
+        String monthName = Month.of(month).getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+        return monthName + " " + year;
+    }
+
     private TransactionDTO mapTransactionToDTO(Transaction transaction) {
         return TransactionDTO.builder()
                 .id(transaction.getId())

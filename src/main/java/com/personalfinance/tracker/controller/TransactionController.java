@@ -67,7 +67,7 @@ public class TransactionController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<TransactionDTO> getTransactionById(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             Authentication authentication) {
         Long userId = getCurrentUserId(authentication);
         return ResponseEntity.ok(transactionService.getTransactionById(id, userId));
@@ -99,7 +99,7 @@ public class TransactionController {
      */
     @PutMapping("/{id}")
     public ResponseEntity<TransactionDTO> updateTransaction(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @Valid @RequestBody TransactionDTO dto,
             Authentication authentication) {
         Long userId = getCurrentUserId(authentication);
@@ -115,7 +115,7 @@ public class TransactionController {
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteTransaction(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             Authentication authentication) {
         Long userId = getCurrentUserId(authentication);
         transactionService.deleteTransaction(id, userId);

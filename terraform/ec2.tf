@@ -131,3 +131,16 @@ resource "aws_instance" "backend" {
     Project = "personal-finance-tracker"
   }
 }
+
+# -----------------------------------------------------------------------------
+# Elastic IP for EC2 Instance (static public IP)
+# -----------------------------------------------------------------------------
+resource "aws_eip" "backend" {
+  instance = aws_instance.backend.id
+  domain   = "vpc"
+
+  tags = {
+    Name    = "finance-tracker-backend-eip"
+    Project = "personal-finance-tracker"
+  }
+}

@@ -67,7 +67,7 @@ public class BudgetController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<BudgetDTO> getBudgetById(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             Authentication authentication) {
         Long userId = getCurrentUserId(authentication);
         return ResponseEntity.ok(budgetService.getBudgetById(id, userId));
@@ -99,7 +99,7 @@ public class BudgetController {
      */
     @PutMapping("/{id}")
     public ResponseEntity<BudgetDTO> updateBudget(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @Valid @RequestBody BudgetDTO dto,
             Authentication authentication) {
         Long userId = getCurrentUserId(authentication);
@@ -115,7 +115,7 @@ public class BudgetController {
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteBudget(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             Authentication authentication) {
         Long userId = getCurrentUserId(authentication);
         budgetService.deleteBudget(id, userId);

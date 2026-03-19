@@ -66,7 +66,7 @@ public class CategoryController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<CategoryDTO> getCategoryById(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             Authentication authentication) {
         Long userId = getCurrentUserId(authentication);
         return ResponseEntity.ok(categoryService.getCategoryById(id, userId));
@@ -98,7 +98,7 @@ public class CategoryController {
      */
     @PutMapping("/{id}")
     public ResponseEntity<CategoryDTO> updateCategory(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @Valid @RequestBody CategoryDTO dto,
             Authentication authentication) {
         Long userId = getCurrentUserId(authentication);
@@ -114,7 +114,7 @@ public class CategoryController {
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteCategory(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             Authentication authentication) {
         Long userId = getCurrentUserId(authentication);
         categoryService.deleteCategory(id, userId);

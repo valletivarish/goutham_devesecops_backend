@@ -3,6 +3,7 @@ package com.personalfinance.tracker.service;
 import com.personalfinance.tracker.dto.BudgetDTO;
 import com.personalfinance.tracker.exception.ResourceNotFoundException;
 import com.personalfinance.tracker.model.Budget;
+import com.personalfinance.tracker.model.BudgetPeriod;
 import com.personalfinance.tracker.model.Category;
 import com.personalfinance.tracker.model.TransactionType;
 import com.personalfinance.tracker.model.User;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -100,11 +102,15 @@ public class BudgetService {
         Category category = categoryRepository.findByIdAndUserId(dto.getCategoryId(), userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Category", dto.getCategoryId()));
 
+        LocalDate endDate = dto.getEndDate() != null
+                ? dto.getEndDate()
+                : resolveEndDate(dto.getStartDate(), dto.getPeriod());
+
         Budget budget = Budget.builder()
                 .amountLimit(dto.getAmountLimit())
                 .period(dto.getPeriod())
                 .startDate(dto.getStartDate())
-                .endDate(dto.getEndDate())
+                .endDate(endDate)
                 .user(user)
                 .category(category)
                 .build();
@@ -129,10 +135,14 @@ public class BudgetService {
         Category category = categoryRepository.findByIdAndUserId(dto.getCategoryId(), userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Category", dto.getCategoryId()));
 
+        LocalDate endDate = dto.getEndDate() != null
+                ? dto.getEndDate()
+                : resolveEndDate(dto.getStartDate(), dto.getPeriod());
+
         existing.setAmountLimit(dto.getAmountLimit());
         existing.setPeriod(dto.getPeriod());
         existing.setStartDate(dto.getStartDate());
-        existing.setEndDate(dto.getEndDate());
+        existing.setEndDate(endDate);
         existing.setCategory(category);
 
         Budget updated = budgetRepository.save(existing);
@@ -183,5 +193,17 @@ public class BudgetService {
                 .spent(spent != null ? spent : BigDecimal.ZERO)
                 .createdAt(budget.getCreatedAt())
                 .build();
+    }
+
+    private LocalDate resolveEndDate(LocalDate startDate, BudgetPeriod period) {
+        if (startDate == null || period == null) {
+            return startDate;
+        }
+        return switch (period) {
+            case WEEKLY -> startDate.plusWeeks(1).minusDays(1);
+            case MONTHLY -> startDate.plusMonths(1).minusDays(1);
+            case YEARLY -> startDate.plusYears(1).minusDays(1);
+            default -> startDate.plusMonths(1).minusDays(1);
+        };
     }
 }

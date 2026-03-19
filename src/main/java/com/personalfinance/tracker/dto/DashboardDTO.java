@@ -39,6 +39,19 @@ public class DashboardDTO {
     /** Total number of financial goals defined by the user. */
     private int totalGoals;
 
+    /** Monthly income vs expenses data for chart rendering. */
+    private List<MonthlyDataDTO> monthlyData;
+
     /** A short list of the user's most recent transactions, ordered newest first. */
     private List<TransactionDTO> recentTransactions;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class MonthlyDataDTO {
+        private String month;
+        private BigDecimal income;
+        private BigDecimal expenses;
+    }
 }

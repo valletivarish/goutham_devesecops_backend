@@ -3,8 +3,8 @@
 # =============================================================================
 
 output "ec2_public_ip" {
-  description = "Public IP address of the backend EC2 instance"
-  value       = aws_instance.backend.public_ip
+  description = "Elastic IP address of the backend EC2 instance"
+  value       = aws_eip.backend.public_ip
 }
 
 output "s3_website_url" {
