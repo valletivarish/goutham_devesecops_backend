@@ -29,25 +29,19 @@ jobs:
           cache: maven
 
       # ------------------------------------------------------------------
-      # 3. Maven Build & Unit Tests
+      # 3. Maven Build, Unit Tests & JaCoCo Coverage
       # ------------------------------------------------------------------
-      - name: Build with Maven
-        run: mvn clean compile -B
-
-      - name: Run Unit Tests
-        run: mvn test -B
-
-      # ------------------------------------------------------------------
-      # 4. JaCoCo Code Coverage Report
-      # ------------------------------------------------------------------
-      - name: Generate JaCoCo Coverage Report
-        run: mvn verify -B -DskipTests
+      - name: Build and Test with JaCoCo Coverage
+        run: mvn clean verify -B
 
       - name: Upload JaCoCo Report
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: jacoco-report
-          path: target/site/jacoco/
+          path: |
+            target/site/jacoco/
+            target/jacoco.exec
           retention-days: 30
 
       # ------------------------------------------------------------------
@@ -89,15 +83,14 @@ jobs:
         if: always()
         with:
           name: owasp-dependency-check-report
-          path: target/dependency-check-report.*
+          path: |
+            target/dependency-check-report.html
+            target/dependency-check-report.json
           retention-days: 30
 
       # ------------------------------------------------------------------
       # 8. Trivy Vulnerability Scan & SBOM
       # ------------------------------------------------------------------
-      - name: Package JAR for Trivy scan
-        run: mvn package -B -DskipTests
-
       - name: Run Trivy vulnerability scan
         uses: aquasecurity/trivy-action@master
         with:
