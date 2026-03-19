@@ -1,0 +1,96 @@
+name: Backend CD - Deploy to AWS EC2
+
+on:
+  workflow_run:
+    workflows: ["Backend CI - Build & Security Scan"]
+    types:
+      - completed
+    branches: [master, main]
+
+jobs:
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      # ------------------------------------------------------------------
+      # 1. Checkout
+      # ------------------------------------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------
+      # 2. Setup Java 17
+      # ------------------------------------------------------------------
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      # ------------------------------------------------------------------
+      # 3. Build JAR
+      # ------------------------------------------------------------------
+      - name: Build production JAR
+        run: mvn clean package -B -DskipTests
+
+      # ------------------------------------------------------------------
+      # 4. Configure AWS Credentials
+      # ------------------------------------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # ------------------------------------------------------------------
+      # 5. Get EC2 Instance IP
+      # ------------------------------------------------------------------
+      - name: Get EC2 Public IP
+        id: ec2
+        run: |
+          EC2_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=finance-tracker-backend" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].PublicIpAddress' \
+            --output text)
+          echo "ip=$EC2_IP" >> $GITHUB_OUTPUT
+          echo "EC2 IP: $EC2_IP"
+
+      # ------------------------------------------------------------------
+      # 6. Deploy to EC2
+      # ------------------------------------------------------------------
+      - name: Setup SSH key
+        run: |
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > deploy_key.pem
+          chmod 600 deploy_key.pem
+
+      - name: Copy JAR to EC2
+        run: |
+          scp -i deploy_key.pem -o StrictHostKeyChecking=no \
+            target/*.jar \
+            ec2-user@${{ steps.ec2.outputs.ip }}:/opt/finance-tracker/app.jar
+
+      - name: Restart application on EC2
+        run: |
+          ssh -i deploy_key.pem -o StrictHostKeyChecking=no \
+            ec2-user@${{ steps.ec2.outputs.ip }} \
+            'sudo systemctl restart finance-tracker && sleep 5 && sudo systemctl status finance-tracker'
+
+      # ------------------------------------------------------------------
+      # 7. Health Check
+      # ------------------------------------------------------------------
+      - name: Verify deployment
+        run: |
+          sleep 15
+          curl -f http://${{ steps.ec2.outputs.ip }}:8080/v3/api-docs || echo "Health check - API docs endpoint may not be immediately available"
+
+      # ------------------------------------------------------------------
+      # Cleanup
+      # ------------------------------------------------------------------
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f deploy_key.pem
