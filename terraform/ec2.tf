@@ -105,11 +105,6 @@ resource "aws_instance" "backend" {
     StandardError=journal
     SyslogIdentifier=finance-tracker
 
-    # Environment variables for database connection
-    Environment=SPRING_DATASOURCE_URL=jdbc:mysql://${aws_db_instance.mysql.endpoint}/personal_finance_tracker
-    Environment=SPRING_DATASOURCE_USERNAME=${var.db_username}
-    Environment=SPRING_DATASOURCE_PASSWORD=${var.db_password}
-
     [Install]
     WantedBy=multi-user.target
     SERVICE

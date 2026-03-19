@@ -37,31 +37,7 @@ jobs:
         run: mvn clean package -B -DskipTests
 
       # ------------------------------------------------------------------
-      # 4. Configure AWS Credentials
-      # ------------------------------------------------------------------
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      # ------------------------------------------------------------------
-      # 5. Get EC2 Instance IP
-      # ------------------------------------------------------------------
-      - name: Get EC2 Public IP
-        id: ec2
-        run: |
-          EC2_IP=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=finance-tracker-backend" \
-                      "Name=instance-state-name,Values=running" \
-            --query 'Reservations[0].Instances[0].PublicIpAddress' \
-            --output text)
-          echo "ip=$EC2_IP" >> $GITHUB_OUTPUT
-          echo "EC2 IP: $EC2_IP"
-
-      # ------------------------------------------------------------------
-      # 6. Deploy to EC2
+      # 4. Deploy to EC2
       # ------------------------------------------------------------------
       - name: Setup SSH key
         run: |
@@ -72,21 +48,21 @@ jobs:
         run: |
           scp -i deploy_key.pem -o StrictHostKeyChecking=no \
             target/*.jar \
-            ec2-user@${{ steps.ec2.outputs.ip }}:/opt/finance-tracker/app.jar
+            ec2-user@${{ secrets.EC2_HOST }}:/opt/finance-tracker/app.jar
 
       - name: Restart application on EC2
         run: |
           ssh -i deploy_key.pem -o StrictHostKeyChecking=no \
-            ec2-user@${{ steps.ec2.outputs.ip }} \
+            ec2-user@${{ secrets.EC2_HOST }} \
             'sudo systemctl restart finance-tracker && sleep 5 && sudo systemctl status finance-tracker'
 
       # ------------------------------------------------------------------
-      # 7. Health Check
+      # 5. Health Check
       # ------------------------------------------------------------------
       - name: Verify deployment
         run: |
           sleep 15
-          curl -f http://${{ steps.ec2.outputs.ip }}:8080/v3/api-docs || echo "Health check - API docs endpoint may not be immediately available"
+          curl -f http://${{ secrets.EC2_HOST }}:8080/v3/api-docs || echo "Health check - API docs endpoint may not be immediately available"
 
       # ------------------------------------------------------------------
       # Cleanup
