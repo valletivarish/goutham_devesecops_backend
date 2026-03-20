@@ -1,4 +1,4 @@
-name: Personal Finance Tracker CI/CD Pipeline
+name: Backend CI/CD - Build, Security Scan & Deploy
 
 on:
   push:
@@ -7,14 +7,20 @@ on:
     branches: [main]
 
 jobs:
-  # ==================== CONTINUOUS INTEGRATION ====================
-
-  backend-ci:
-    name: Backend CI - Build, Test & Security Analysis
+  build-and-test:
+    name: Build, Test & Security Analysis
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
+    steps:
+      # ------------------------------------------------------------------
+      # 1. Checkout
+      # ------------------------------------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------
+      # 2. Setup Java 17
+      # ------------------------------------------------------------------
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -22,154 +28,183 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Build and Test with Maven
-        run: cd backend && mvn clean verify -B
-        # This runs: compile, test (JaCoCo), SpotBugs, PMD
+      # ------------------------------------------------------------------
+      # 3. Maven Build, Unit Tests & JaCoCo Coverage
+      # ------------------------------------------------------------------
+      - name: Build and Test with JaCoCo Coverage
+        run: mvn clean verify -B
 
-      - name: OWASP Dependency Check
-        run: cd backend && mvn dependency-check:check -B
-        continue-on-error: true
+      - name: Upload JaCoCo Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-report
+          path: |
+            target/site/jacoco/
+            target/jacoco.exec
+          retention-days: 30
+
+      # ------------------------------------------------------------------
+      # 4. SpotBugs + FindSecBugs Static Analysis
+      # ------------------------------------------------------------------
+      - name: Run SpotBugs Analysis
+        run: mvn spotbugs:check -B || true
 
       - name: Upload SpotBugs Report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: spotbugs-report
-          path: backend/target/spotbugsXml.xml
+          path: target/spotbugsXml.xml
+          retention-days: 30
+
+      # ------------------------------------------------------------------
+      # 5. PMD Static Analysis
+      # ------------------------------------------------------------------
+      - name: Run PMD Analysis
+        run: mvn pmd:check -B || true
 
       - name: Upload PMD Report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: pmd-report
-          path: backend/target/pmd.xml
+          path: target/pmd.xml
+          retention-days: 30
 
-      - name: Upload OWASP Report
+      # ------------------------------------------------------------------
+      # 6. OWASP Dependency-Check
+      # ------------------------------------------------------------------
+      - name: Run OWASP Dependency-Check
+        run: mvn org.owasp:dependency-check-maven:check -B -DfailBuildOnCVSS=11 || true
+
+      - name: Upload OWASP Dependency-Check Report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: owasp-dependency-check-report
-          path: backend/target/dependency-check-report.html
+          path: |
+            target/dependency-check-report.html
+            target/dependency-check-report.json
+          retention-days: 30
 
-      - name: Upload JaCoCo Coverage Report
+      # ------------------------------------------------------------------
+      # 7. Trivy Vulnerability Scan & SBOM
+      # ------------------------------------------------------------------
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          output: 'trivy-results.txt'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Generate Trivy SBOM
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'cyclonedx'
+          output: 'trivy-sbom.json'
+
+      - name: Upload Trivy Reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: jacoco-report
-          path: backend/target/site/jacoco/
+          name: trivy-reports
+          path: |
+            trivy-results.txt
+            trivy-sbom.json
+          retention-days: 30
 
-  frontend-ci:
-    name: Frontend CI - Build, Lint & Security Scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      # ------------------------------------------------------------------
+      # 8. Gitleaks Secret Detection
+      # ------------------------------------------------------------------
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: true
 
-      - name: Set up Node.js 18
-        uses: actions/setup-node@v4
+      - name: Upload Gitleaks Report
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
+          name: gitleaks-report
+          path: results.sarif
+          retention-days: 30
 
-      - name: Install Dependencies
-        run: cd frontend && npm ci
+      # ------------------------------------------------------------------
+      # 9. Upload JAR Artifact
+      # ------------------------------------------------------------------
+      - name: Upload JAR Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: target/*.jar
+          retention-days: 30
 
-      - name: ESLint Static Analysis
-        run: cd frontend && npm run lint
-        continue-on-error: true
-
-      - name: Build Frontend
-        run: cd frontend && npm run build
-
-      - name: npm Audit Security Scan
-        run: cd frontend && npm audit --audit-level=moderate
-        continue-on-error: true
-
-  # ==================== CONTINUOUS DEPLOYMENT ====================
-
-  deploy-backend:
-    name: CD - Deploy Backend to EC2
-    needs: [backend-ci]
+  deploy:
+    name: Deploy to EC2
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
+    steps:
+      # ------------------------------------------------------------------
+      # 1. Checkout
+      # ------------------------------------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------
+      # 2. Setup Java 17
+      # ------------------------------------------------------------------
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: maven
 
-      - name: Build JAR
-        run: cd backend && mvn clean package -DskipTests -B
+      # ------------------------------------------------------------------
+      # 3. Build JAR
+      # ------------------------------------------------------------------
+      - name: Build production JAR
+        run: mvn clean package -B -DskipTests
 
-      - name: Deploy to EC2 via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            sudo systemctl stop finance-tracker || true
-            cd /opt/finance-tracker
-            sudo cp backup.jar backup-prev.jar || true
-            sudo cp app.jar backup.jar || true
+      # ------------------------------------------------------------------
+      # 4. Deploy to EC2
+      # ------------------------------------------------------------------
+      - name: Setup SSH key
+        run: |
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > deploy_key.pem
+          chmod 600 deploy_key.pem
 
       - name: Copy JAR to EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "backend/target/*.jar"
-          target: "/opt/finance-tracker/"
-          strip_components: 2
-
-      - name: Start Application on EC2
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd /opt/finance-tracker
-            sudo mv *.jar app.jar
-            sudo systemctl start finance-tracker
-            sleep 10
-            curl -f http://localhost:8080/actuator/health || echo "Health check failed"
-
-  deploy-frontend:
-    name: CD - Deploy Frontend to S3
-    needs: [frontend-ci]
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node.js 18
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install and Build
         run: |
-          cd frontend
-          npm ci
-          npm run build
+          scp -i deploy_key.pem -o StrictHostKeyChecking=no \
+            target/*.jar \
+            ec2-user@${{ secrets.EC2_HOST }}:/opt/finance-tracker/app.jar
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      - name: Deploy to S3
-        run: aws s3 sync frontend/dist/ s3://${{ secrets.S3_BUCKET_NAME }} --delete
-
-      - name: Verify Deployment
+      - name: Restart application on EC2
         run: |
-          curl -f http://${{ secrets.S3_BUCKET_NAME }}.s3-website-us-east-1.amazonaws.com || echo "Frontend deployment verification failed"
+          ssh -i deploy_key.pem -o StrictHostKeyChecking=no \
+            ec2-user@${{ secrets.EC2_HOST }} \
+            'sudo systemctl restart finance-tracker && sleep 5 && sudo systemctl status finance-tracker'
+
+      # ------------------------------------------------------------------
+      # 5. Health Check
+      # ------------------------------------------------------------------
+      - name: Verify deployment
+        run: |
+          sleep 15
+          curl -f http://${{ secrets.EC2_HOST }}:8080/v3/api-docs || echo "Health check - API docs endpoint may not be immediately available"
+
+      # ------------------------------------------------------------------
+      # Cleanup
+      # ------------------------------------------------------------------
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f deploy_key.pem
