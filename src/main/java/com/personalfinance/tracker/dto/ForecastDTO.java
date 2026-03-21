@@ -21,6 +21,9 @@ import java.util.List;
 @AllArgsConstructor
 public class ForecastDTO {
 
+    /** Ordered list of historical monthly spending totals used for the regression. */
+    private List<MonthlyAmount> historicalData;
+
     /** Ordered list of monthly predictions for upcoming periods. */
     private List<MonthlyPrediction> predictions;
 
@@ -35,6 +38,22 @@ public class ForecastDTO {
      * linear model fits historical data. Ranges from 0.0 (no fit) to 1.0 (perfect fit).
      */
     private Double confidence;
+
+    /**
+     * Represents a single month's actual historical spending amount.
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class MonthlyAmount {
+
+        /** Month identifier in {@code "YYYY-MM"} format (e.g., "2026-01"). */
+        private String month;
+
+        /** Actual spending amount for the given month. */
+        private BigDecimal amount;
+    }
 
     /**
      * Represents a single month's predicted financial amount.

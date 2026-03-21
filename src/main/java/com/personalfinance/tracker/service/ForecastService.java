@@ -80,8 +80,9 @@ public class ForecastService {
                     .build();
         }
 
-        // Build the regression model using monthly index as X and total as Y
+        // Build the regression model and collect historical data
         SimpleRegression regression = new SimpleRegression();
+        List<ForecastDTO.MonthlyAmount> historicalData = new ArrayList<>();
         YearMonth lastMonth = null;
 
         for (int i = 0; i < monthlyTotals.size(); i++) {
@@ -92,6 +93,11 @@ public class ForecastService {
 
             regression.addData(i, total);
             lastMonth = YearMonth.of(year, month);
+
+            historicalData.add(ForecastDTO.MonthlyAmount.builder()
+                    .month(lastMonth.toString())
+                    .amount(BigDecimal.valueOf(total).setScale(2, RoundingMode.HALF_UP))
+                    .build());
         }
 
         // Generate predictions for the next N months
@@ -131,6 +137,7 @@ public class ForecastService {
         }
 
         return ForecastDTO.builder()
+                .historicalData(historicalData)
                 .predictions(predictions)
                 .trend(trend)
                 .confidence(Math.round(rSquared * 10000.0) / 10000.0)
